@@ -1,0 +1,141 @@
+---
+title: "Mushroom Edibility Prediction"
+author: "Macmillan Jacobson"
+date: "2023-03-27"
+
+output: pdf_document
+---
+
+\newpage
+
+# Abstract
+
+This paper attempts to use observations about the stems of mushrooms to predict if the mushroom is edible or poisonous.  We use 6 categorical variables that can be easily observed upon simply looking at a given mushroom.  The motivation of this report is two fold.  The first is to create a useful tool to help foragers identify which mushrooms they should take home to cook and which they should leave out in the forest.  The second motivation is to examine the efficacy of sophisticated learning algorithms like random forest and AdaBoost in contrast with more a more basic and well understood algorithm like logistic regression.  In our analysis we find that random forest and AdaBoost both achieve a 97.65% accuracy score on the testing dataset while the logistic regression algorithm achieves 85.48% accuracy.  Clearly, the more sophisticated methods outperform the more basic method.  Furthermore, we have created a useful model to help (with some error), predict the edibility of mushrooms found in the wild using simple observations.
+
+# Introduction
+
+In this report, we will attempting to create a model that can inform a user if a given mushroom is edible. To accomplish this task we will use three classification methods.  Two of these classification methods will be more advanced and one more basic in order to illustrate the efficacy of the more advanced methods.  As we constantly encounter mushrooms in our world, and as some mushrooms are perfectly safe and even delicious to eat while some will kill the consumer in minutes, it would be quite handy to have a way to make some simple observations about a mushroom's stalk to determine if the given mushroom is edible.  We will do just that in this paper.
+
+# Problem Statement and Data Sources
+
+We will attempt, via three classification methods, to generate a model that can accurately predict, based on information about a mushroom's stalk, whether it is edible or not.  The 6 categorical variables we will use to predict edibility are stalk shape, the root of the stalk, the colors of the mushrooms in various places and the surface texture in various places.  The data here comes from Kaggle and can be found here: https://www.kaggle.com/datasets/uciml/mushroom-classification?resource=download.
+
+# Proposed Methodology
+
+The first method we will use to classify mushrooms as poisonous or edible is a random forest classifier.  Random forests are known to be very good, rivaling even neural networks for classification purposes.  As such, it makes sense that we would use a random forest here.  The second method we will use is boosting.  Boosting is also known to be effective in classification algorithms and so we will employ it here to see how it compares to our random forest.  Finally, we will use a more basic method, logistic regression, to classify our mushrooms.  We will do this partly as a sanity check and partly to see if the more sophisticated methods are, in fact, superior.
+
+# Analysis and Results
+
+The dataset we are working with contains 8124 observations.  Each of these observations contains 6 categorical variables and in the chart below, we can see the number of categories per variable.  For the meanings of each of the values in each category, please refer to the definitions in the kaggle link above.
+
+```{r, echo=FALSE}
+df = read.csv('mushrooms.csv')[,c(1, 11:16)]
+apply(df[,2:7], 2, function(x) length(unique(x)))
+```
+
+
+Note that the chart above leaves out or response variable, "class".  "Class" is simply 'e' or 'p' indicating edible or poisonous.  Because all of our variables are categorical, we will treat each column as a factor.  This, essentially turns our 6 predicting variables into 33 boolean predicting variables.
+
+
+NOTE:  In all of our classification methods, we will use an 20/80 test/train split for our dataset.
+
+```{r, echo=FALSE}
+set.seed(1)
+df[sapply(df, is.character)] <- lapply(
+  df[sapply(df, is.character)], as.factor)
+
+sample <- sample(c(TRUE, FALSE), nrow(df), replace=TRUE, prob=c(0.8,0.2))
+train  <- df[sample, ]
+test   <- df[!sample, ]
+```
+
+## Random Forest
+
+Below is the output from our random forest classifier tuned with a 5-fold cross validation scheme.  We use the 'caret' package in R to create this model.
+
+```{r, echo=FALSE}
+library(caret)
+library(dplyr)
+library(ggplot2)
+set.seed(1)
+rf <- train(
+  class~.,
+  data=train,
+  method='rf',
+  trControl=trainControl(method='cv', number=5),
+  metric='Accuracy')
+rf$finalModel
+```
+
+```{r, echo=FALSE}
+var_imp <- varImp(rf, scale=TRUE)$importance
+var_imp <- data.frame(variables=row.names(var_imp), importance=var_imp$Overall)
+var_imp[order(-var_imp$importance),][1:5,1]
+```
+
+
+We can see that our random forest hyperparameters end up being 500 trees with a minimum of 14 variables per tree.  Note that since we have factored each of our predicting variables, this is 14 of 33 possible.  Our resulting random forest has an error rate of 2.39%.  1.64% for our poisonous mushrooms and 3.11% for our edible mushrooms.  Additionally, we can see the 5 most important factors in our predictions.  
+
+```{r, echo=FALSE}
+y_hats <- predict(object=rf, newdata=test[,-1])
+accuracy <- mean(y_hats == test[,1])*100
+cat('Accuracy on testing data: ', round(accuracy, 2), '%',  sep='')
+```
+
+Finally, our random forest achieves a 97.65% accuracy score on our testing set.
+
+## Boosting
+
+We will build an AdaBoosting model using 5-fold cross validation for tuning our parameters.  We use the 'adabag' library in r to build our model.  Below are the results of our model after training and predicting on our testing dataset.  As we can see in the results, AdaBoosting achieves an accuracy of 97.65% which is identical to that of random forest.
+
+```{r, echo=FALSE}
+library('adabag')
+model_adaboost <- boosting(class~., data=train, boos=TRUE, mfinal=50)
+
+pred_test = as.data.frame(predict(model_adaboost, test)$votes)
+colnames(pred_test) = c('e', 'p')
+labels = colnames(pred_test)[apply(pred_test,1,which.max)]
+cm = confusionMatrix(test$class, as.factor(labels))
+cm
+```
+
+## Logistic Regression
+
+The final method we will use is logistic regression.
+
+```{r, echo=FALSE}
+set.seed(1)
+lr = glm(class~., data=train, family='binomial')
+summary(lr)
+```
+
+As we can see, our logistic regression calculation identified several important variables as significant and they are similar to those identified by random forest.  Now lets see how our model predicts on the testing set.
+
+```{r, echo=FALSE}
+y_hats <- predict(lr,newdata=test[,-1],type='response')
+y_hats <- ifelse(y_hats > 0.5,'p','e')
+accuracy <- mean(y_hats == test[,1])*100
+cat('\nAccuracy on testing data: ', round(accuracy, 2), '%',  sep='')
+```
+
+Logistic regression achieves an 85.48% prediction accuracy on our testing set.  While this is not horrible, it is clearly severely outperformed by random forest and boosting.
+
+
+# Conclusion
+
+We have built a model that can, with 97.65% accuracy, determine whether or not a given mushroom is edible.  While this is obviously not perfect, it is quite good.  Interestingly, we found that AdaBoosting and Random Forest algorithms achieve the same accuracy.  Further analysis should be conducted to determine why that is the case in this dataset.  Furthermore, we can see that the more sophisticated algorithms greatly outperform the more basic models like logistic regression.
+
+## Lessons Learned
+I learned that AdaBoosting is a useful and viable algorithm for classification.  The status quo, in my experience, has been to use random forests or neural networks.  It is interesting to see a third algorithm compete with the two gold standard algorithms.
+
+
+
+
+# Appendix: All code for this report
+
+```{r ref.label=knitr::all_labels(), echo=TRUE, eval=FALSE}
+```
+
+
+
+
